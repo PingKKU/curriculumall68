@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Curriculum Interactive Dashboard</title>
+    
+    <!-- Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.css">
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; background-color: #f8fafc; }
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: #3b82f6 !important; color: white !important; border: none; border-radius: 4px; }
+        .chart-container { position: relative; height: 300px; width: 100%; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Header -->
+    <header class="mb-8">
+        <h1 class="text-3xl font-bold text-slate-800">แดชบอร์ดข้อมูลหลักสูตร (Interactive Dashboard)</h1>
+        <p class="text-slate-500">ข้อมูลแบบ Real-time จาก Google Sheets</p>
+    </header>
+
+    <!-- Filters -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">คณะ (Faculty)</label>
+            <select id="filterFaculty" class="w-full border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2 border">
+                <option value="All">ทั้งหมด</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">ระดับการศึกษา (Level)</label>
+            <select id="filterLevel" class="w-full border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2 border">
+                <option value="All">ทั้งหมด</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">ภาษาไทย/นานาชาติ (Language)</label>
+            <select id="filterLanguage" class="w-full border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2 border">
+                <option value="All">ทั้งหมด</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-blue-500">
+            <p class="text-sm text-slate-500 font-medium">หลักสูตรทั้งหมด</p>
+            <p id="kpiTotal" class="text-2xl font-bold text-slate-800">0</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-emerald-500">
+            <p class="text-sm text-slate-500 font-medium">ปริญญาตรี</p>
+            <p id="kpiBachelor" class="text-2xl font-bold text-slate-800">0</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-amber-500">
+            <p class="text-sm text-slate-500 font-medium">ปริญญาโท</p>
+            <p id="kpiMaster" class="text-2xl font-bold text-slate-800">0</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-purple-500">
+            <p class="text-sm text-slate-500 font-medium">ปริญญาเอก</p>
+            <p id="kpiPhD" class="text-2xl font-bold text-slate-800">0</p>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div class="bg-white p-6 rounded-xl shadow-sm">
+            <h3 class="text-lg font-semibold mb-4 text-slate-700">จำนวนหลักสูตรแบ่งตามคณะ</h3>
+            <div class="chart-container">
+                <canvas id="facultyChart"></canvas>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm">
+            <h3 class="text-lg font-semibold mb-4 text-slate-700">สัดส่วนระดับการศึกษา</h3>
+            <div class="chart-container">
+                <canvas id="levelChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Table -->
+    <div class="bg-white p-6 rounded-xl shadow-sm overflow-x-auto">
+        <h3 class="text-lg font-semibold mb-4 text-slate-700">รายการข้อมูลดิบ</h3>
+        <table id="dataTable" class="display w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50">
+                    <th>คณะ</th>
+                    <th>หลักสูตร</th>
+                    <th>ระดับการศึกษา</th>
+                    <th>ปีที่ต้องประเมินครั้งที่ 1</th>
+                    <th>ผลครั้งที่ 1</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/1bPjIVv3lt9no50aoSCTWNQ7nFduzwdhhNu46_Viv0ns/export?format=csv&gid=467066678";
+        let fullData = [];
+        let facultyChart, levelChart, dataTable;
+
+        // Initialize Application
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchData();
+            
+            // Listeners for filters
+            ['filterFaculty', 'filterLevel', 'filterLanguage'].forEach(id => {
+                document.getElementById(id).addEventListener('change', updateDashboard);
+            });
+        });
+
+        async function fetchData() {
+            Papa.parse(csvUrl, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    fullData = results.data;
+                    initializeFilters(fullData);
+                    initDataTable();
+                    updateDashboard();
+                },
+                error: function(err) {
+                    console.error("Error fetching data:", err);
+                    alert("ไม่สามารถดึงข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+                }
+            });
+        }
+
+        function initializeFilters(data) {
+            const faculties = [...new Set(data.map(item => item['คณะ']))].sort();
+            const levels = [...new Set(data.map(item => item['ระดับการศึกษา']))].sort();
+            const languages = [...new Set(data.map(item => item['ภาษาไทย/นานาชาติ']))].sort();
+
+            populateSelect('filterFaculty', faculties);
+            populateSelect('filterLevel', levels);
+            populateSelect('filterLanguage', languages);
+        }
+
+        function populateSelect(id, values) {
+            const select = document.getElementById(id);
+            values.forEach(val => {
+                if(val) {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.innerHTML = val;
+                    select.appendChild(opt);
+                }
+            });
+        }
+
+        function updateDashboard() {
+            const fFaculty = document.getElementById('filterFaculty').value;
+            const fLevel = document.getElementById('filterLevel').value;
+            const fLang = document.getElementById('filterLanguage').value;
+
+            // Filtering Logic
+            const filtered = fullData.filter(row => {
+                return (fFaculty === 'All' || row['คณะ'] === fFaculty) &&
+                       (fLevel === 'All' || row['ระดับการศึกษา'] === fLevel) &&
+                       (fLang === 'All' || row['ภาษาไทย/นานาชาติ'] === fLang);
+            });
+
+            updateKPIs(filtered);
+            updateCharts(filtered);
+            updateTable(filtered);
+        }
+
+        function updateKPIs(data) {
+            const countByLevel = (levelStr) => data.filter(item => item['ระดับการศึกษา']?.includes(levelStr)).length;
+
+            document.getElementById('kpiTotal').innerText = data.length.toLocaleString();
+            document.getElementById('kpiBachelor').innerText = countByLevel('ปริญญาตรี').toLocaleString();
+            document.getElementById('kpiMaster').innerText = countByLevel('ปริญญาโท').toLocaleString();
+            document.getElementById('kpiPhD').innerText = countByLevel('ปริญญาเอก').toLocaleString();
+        }
+
+        function updateCharts(data) {
+            // Data for Faculty Chart
+            const facultyCounts = {};
+            data.forEach(item => {
+                const fac = item['คณะ'] || 'ไม่ระบุ';
+                facultyCounts[fac] = (facultyCounts[fac] || 0) + 1;
+            });
+
+            const facultyLabels = Object.keys(facultyCounts);
+            const facultyValues = Object.values(facultyCounts);
+
+            // Data for Level Chart
+            const levelCounts = {};
+            data.forEach(item => {
+                const lvl = item['ระดับการศึกษา'] || 'ไม่ระบุ';
+                levelCounts[lvl] = (levelCounts[lvl] || 0) + 1;
+            });
+
+            // Destroy existing charts to refresh
+            if (facultyChart) facultyChart.destroy();
+            if (levelChart) levelChart.destroy();
+
+            // Render Bar Chart
+            const ctxFac = document.getElementById('facultyChart').getContext('2d');
+            facultyChart = new Chart(ctxFac, {
+                type: 'bar',
+                data: {
+                    labels: facultyLabels,
+                    datasets: [{
+                        label: 'จำนวนหลักสูตร',
+                        data: facultyValues,
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                }
+            });
+
+            // Render Pie Chart
+            const ctxLvl = document.getElementById('levelChart').getContext('2d');
+            levelChart = new Chart(ctxLvl, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(levelCounts),
+                    datasets: [{
+                        data: Object.values(levelCounts),
+                        backgroundColor: ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
+        }
+
+        function initDataTable() {
+            dataTable = $('#dataTable').DataTable({
+                columns: [
+                    { data: 'คณะ' },
+                    { data: 'หลักสูตร' },
+                    { data: 'ระดับการศึกษา' },
+                    { data: 'ปีการศึกษาที่ต้องรับการตรวจประเมินครั้งที่ 1' },
+                    { data: 'ผลครั้งที่ 1' }
+                ],
+                language: {
+                    search: "ค้นหา:",
+                    lengthMenu: "แสดง _MENU_ รายการ",
+                    info: "แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ",
+                    paginate: { first: "แรก", last: "สุดท้าย", next: "ถัดไป", previous: "ก่อนหน้า" }
+                }
+            });
+        }
+
+        function updateTable(data) {
+            if (dataTable) {
+                dataTable.clear();
+                dataTable.rows.add(data);
+                dataTable.draw();
+            }
+        }
+    </script>
+</body>
+</html>
